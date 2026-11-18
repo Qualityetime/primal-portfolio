@@ -1,0 +1,67 @@
+# Builds the static site and publishes it to GitHub Pages on every push to main.
+# One-time setup: repository Settings → Pages → Build and deployment → Source: "GitHub Actions".
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test simulation and AI
+        run: npm test
+
+      - name: Build
+        run: npm run build
+        env:
+          # Project sites live at https://<user>.github.io/<repository>/
+          BASE_PATH: /${{ github.event.repository.name }}/
+          # The "Source code" link in the app points at this repository.
+          VITE_SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
+          # Optional repository variables (Settings → Secrets and variables → Actions → Variables).
+          VITE_PORTFOLIO_URL: ${{ vars.PORTFOLIO_URL }}
+          VITE_MULTIPLAYER_SOURCE_URL: ${{ vars.MULTIPLAYER_SOURCE_URL }}
+          VITE_MULTIPLAYER_VIDEO_YOUTUBE: ${{ vars.MULTIPLAYER_VIDEO_YOUTUBE }}
+          VITE_MULTIPLAYER_VIDEO_FILE: ${{ vars.MULTIPLAYER_VIDEO_FILE }}
+
+      - name: Check build output
+        run: |
+          node scripts/check-dist.mjs dist "/${{ github.event.repository.name }}/"
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
+          du -sh dist
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
